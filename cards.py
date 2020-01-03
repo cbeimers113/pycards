@@ -1,5 +1,9 @@
+import sys
+sys.path.insert(1, "/src")
 from os import system, name
-from random import shuffle, choice
+from random import shuffle, choice, randrange
+from src.model import Model
+
 
 suits = ["♥", "♦", "♣", "♠"]
 ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
@@ -21,6 +25,13 @@ def getHighest(cards):
     for card in cards:
         if ranks.index(getRank(card)) > ranks.index(getRank(highest)):highest=card
     return highest
+
+#Get lowest ranked card, ignore suit
+def getLowest(cards):
+    lowest=cards[0]
+    for card in cards:
+        if ranks.index(getRank(card)) < ranks.index(getRank(lowest)):lowest=card
+    return lowest
 
 #Sort by rank, ignore suit
 def sort(cards):
@@ -79,7 +90,6 @@ def deal(players, hand):
 
     return trump, sPlayers
 
-#TODO: don't play a trump if reached goal, bet more if leading and have high card, bet more if num cards is low 
 #Play a card
 def play(player, table, trump, tricks, bet):
     cards=player[1:]
@@ -92,13 +102,8 @@ def play(player, table, trump, tricks, bet):
                 cards.remove(card)
         
         if len(follow)>0:
-            lowest=follow[0]
-            for card in follow:
-                if ranks.index(getRank(card)) < ranks.index(getRank(lowest)):lowest=card
-            highest=follow[0]
-            for card in follow:
-                if ranks.index(getRank(card)) > ranks.index(getRank(highest)):highest=card
-            
+            lowest=getLowest(follow)
+            highest=getHighest(follow)            
             if tricks == bet: #Try to lose the trick
                 return lowest
             else: #Try to win more or conserve higher cards
@@ -107,8 +112,8 @@ def play(player, table, trump, tricks, bet):
                     if getRank(card) == getRank(led) and ranks.index(getRank(card)) < ranks.index(getRank(highest)):
                         return highest
                 return lowest
-            return choice(follow)
     
+    #If can't follow, see if can play a trump card and win if needed
     trumps=[]
     for card in cards:
         if getSuit(card)==trump:
@@ -116,9 +121,18 @@ def play(player, table, trump, tricks, bet):
             cards.remove(card)
     
     if len(trumps)>0:
-        return choice(trumps)
+        highest=getHighest(trumps)
+        lowest=getLowest(trumps)
+        if tricks==bet:return getHighest(cards) if len(cards)>0 else lowest#If won the bet ammount, try to get rid of other high cards
+        canWin=True
+        for card in table:
+            if getSuit(card)==trump and ranks.index(getRank(card))>ranks.index(getRank(highest)):canWin=False
+        if canWin:
+            return highest
+        return getLowest(cards)if len(cards)>0 else lowest
     
-    return choice(cards)
+    #Can't follow or attempt to play trump, just throw low cards
+    return getLowest(cards)
 
 #Determine who won the trick
 def getWinner(table, trump):
@@ -138,77 +152,150 @@ def getWinner(table, trump):
     return table.index(highest)
 
 #Figure out how many cards should be bet
-def shouldBet(cards, trump, isLeading):
+#TODO: bet more if leading and have high card, bet more if num cards is low 
+def shouldBet(cards, trump, isLeading, model):
     num=0
     for card in cards:
-        if (ranks.index(getRank(card)) >= ranks.index("7" if isLeading else "10") and getSuit(card) == trump) or (ranks.index(getRank(card)) >= ranks.index("9" if isLeading else "J")):num+=1
-    return num
+        if (ranks.index(getRank(card)) >= ranks.index(model.betLeadTru if isLeading else model.betNoLeadTru) and getSuit(card) == trump) or (ranks.index(getRank(card)) >= ranks.index(model.betLeadNoTru if isLeading else model.betNoLeadNoTru)):num+=1
+    return num+model.offset(len(cards))
 
 
 #Main method
-def main():
-    players=[["Chris"],["Pake"],["Dad"],["Rachel"]]
-    scores=[0,0,0,0]
-    for hand in range(1, 26):    
-        #Clear screen
-        if name == "nt": 
-            system("cls") 
-            system("echo off")
-            system("color 06")
-            system("title Up and Down the River")
-        else: 
-            system("clear") 
-        
-        print(players[0][0]+": "+str(scores[0])+"   "+players[1][0]+": "+str(scores[1])+"   "+players[2][0]+": "+str(scores[2])+"   "+players[3][0]+": "+str(scores[3]))
+def train(pGens):
+    #For learning
+    models=[]
+    for i in range(4):
+        models.append(Model(choice(ranks), choice(ranks), choice(ranks), choice(ranks), randrange(10), choice([True, False]), choice([True, False]), choice([True, False])))
 
-        #Deal cards and begin hand
-        numCards=hand if hand <= 13 else 26-hand
-        trump, players=deal(players, numCards)
-        leading=hand%4
-        print("Hand "+str(hand)+", "+str(numCards)+" card"+("s. " if numCards>1 else ". ")+" Trump is "+trump+". "+players[leading][0]+" leads")
+    for training in range(pGens):
+        players=[["Chris"],["Pake"],["Dad"],["Rachel"]]
+        scores=[0,0,0,0]
+        for hand in range(1, 26):    
+            #Clear screen
+            # if name == "nt": 
+            #     system("cls") 
+            #     system("echo off")
+            #     system("color 06")
+            #     system("title Up and Down the River")
+            # else: 
+            #     system("clear") 
+            
+            #print(players[0][0]+": "+str(scores[0])+"   "+players[1][0]+": "+str(scores[1])+"   "+players[2][0]+": "+str(scores[2])+"   "+players[3][0]+": "+str(scores[3]))
 
-        bid=[shouldBet(players[0][1:], trump, leading==0),shouldBet(players[1][1:], trump, leading==1),shouldBet(players[2][1:], trump, leading==2),shouldBet(players[3][1:], trump, leading==3)]
-        tricks=[0,0,0,0]
+            #Deal cards and begin hand
+            numCards=hand if hand <= 13 else 26-hand
+            trump, players=deal(players, numCards)
+            leading=hand%4
+            #print("Hand "+str(hand)+", "+str(numCards)+" card"+("s. " if numCards>1 else " ")+" Trump is "+trump+" "+players[leading][0]+" leads")
 
-        print(players[0][0]+" bets "+str(bid[0])+"   "+players[1][0]+" bets "+str(bid[1])+"   "+players[2][0]+" bets "+str(bid[2])+"   "+players[3][0]+" bets "+str(bid[3]))
+            bid=[0]
+            tricks=[0,0,0,0]
 
-        for trick in range(numCards):
-            table=[]
-            print("")
-
-            #Let each player decide what card to play
             for i in range(4):
-                index=i+leading
-                if index>3:index-=4
-                card=play(players[index], table, trump, tricks[index], bid[index])
-                players[index].remove(card)
-                table.append(card)
-                print(players[index][0]+" plays "+card)
-            winner=getWinner(table, trump)+leading
-            if winner>3:winner-=4
-            #Wait for input before advancing to next trick
-            input("\n"+players[winner][0]+" wins. Press Enter to continue to next trick.")
-            scores[winner]+=1
-            tricks[winner]+=1
+                bid.append(shouldBet(players[i][1:], trump, leading==i, models[i]))
+
+            #print(players[0][0]+" bets "+str(bid[0])+"   "+players[1][0]+" bets "+str(bid[1])+"   "+players[2][0]+" bets "+str(bid[2])+"   "+players[3][0]+" bets "+str(bid[3]))
+
+            for trick in range(numCards):
+                table=[]
+                #print("")
+
+                #Let each player decide what card to play
+                for i in range(4):
+                    index=i+leading
+                    if index>3:index-=4
+                    card=play(players[index], table, trump, tricks[index], bid[index])
+                    players[index].remove(card)
+                    table.append(card)
+                    #print(players[index][0]+" plays "+card)
+                winner=getWinner(table, trump)+leading
+                if winner>3:winner-=4
+                #Wait for input before advancing to next trick
+                # input("\n"+players[winner][0]+" wins. Press Enter to continue to next trick.")
+                scores[winner]+=1
+                tricks[winner]+=1
+            
+            for i in range(4):
+                if tricks[i]==bid[i]:
+                    scores[i]+=5
+
+            #Wait for input before advancing to next hand
+            # if hand < 25:
+            #     input("\nPress Enter to continue to next hand.")
+
+        # if name == "nt":
+        #     system("cls")
+        # else:
+        #     system("clear")
         
-        for i in range(4):
-            if tricks[i]==bid[i]:
-                scores[i]+=5
+        # print("Final scores: "+players[0][0]+": "+str(scores[0])+"   "+players[1][0]+": "+str(scores[1])+"   "+players[2][0]+": "+str(scores[2])+"   "+players[3][0]+": "+str(scores[3]))
+        winner=players[0]
+        best=models[0]
+        for i in range(len(scores)):
+            if scores[i]>scores[players.index(winner)]:
+                winner=players[i]
+                best=models[i]
 
-        #Wait for input before advancing to next hand
-        if hand < 25:
-            input("\nPress Enter to continue to next hand.")
+        for model in models:
+            if model != best:
+                model=Model(choice(ranks), choice(ranks), choice(ranks), choice(ranks), randrange(10), choice([True, False]), choice([True, False]), choice([True, False]))
 
-    if name == "nt":
-        system("cls")
-    else:
-        system("clear")
-    
-    print("Final scores: "+players[0][0]+": "+str(scores[0])+"   "+players[1][0]+": "+str(scores[1])+"   "+players[2][0]+": "+str(scores[2])+"   "+players[3][0]+": "+str(scores[3]))
-    winner=players[0]
-    for i in range(len(scores)):
-        if scores[i]>scores[players.index(winner)]:winner=players[i]
-    print(winner[0]+" wins!")
+        return best
+        # print(winner[0]+" wins!")
+
+def main():
+    results=[]
+    anim=["|", "/", "―", "\\"]
+    for mTraining in range(1000):
+        winners=[]
+        for i in range(100):
+            winners.append(train(1000))
+            system("clear")
+            print("Training "+anim[i%len(anim)])
+
+        wranks=[0,0,0,0,0,0,0,0]
+        for model in winners:
+            wranks[0]+=ranks.index(model.betLeadTru)
+            wranks[1]+=ranks.index(model.betNoLeadTru)
+            wranks[2]+=ranks.index(model.betLeadNoTru)
+            wranks[3]+=ranks.index(model.betNoLeadNoTru)
+            wranks[4]+=model.offs
+            wranks[5]+=1 if model.add else 0
+            wranks[6]+=1 if model.pos else 0
+            wranks[7]+=1 if model.recip else 0
+        
+        for i in range(len(wranks)):
+            if i < 5:
+                wranks[i]=int(wranks[i]/len(winners))
+            else:
+                wranks[i]=True if wranks[i]>len(winners)/2 else False
+
+        found=False
+        for result in results:
+            if wranks in result:
+                result[1]+=1
+                found=True
+        
+        if not found:
+            results.append([wranks, 1])
+
+    sorted=[]
+    while len(results)>0:
+        highest=results[0]
+        for result in results:
+            if result[1]>highest[1]:highest=result
+        sorted.append(highest)
+        results.remove(highest)
+
+    for result in sorted:
+        print(str(result[1])+":    [", end="")
+        for wrank in result[0]:
+            print(ranks[int(wrank)] if type(wrank)!=bool else wrank, end=" ")
+        print("]")
+
 
 if __name__=="__main__":
     main()
+
+# 4:    [7 7 7 8 6 False True False ]
+# 4:    [8 8 8 8 6 True False False ]
